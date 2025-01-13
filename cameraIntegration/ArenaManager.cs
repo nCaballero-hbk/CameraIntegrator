@@ -47,10 +47,10 @@ namespace Streaming
         private bool recording = false;
         private bool streaming = false;
 
-        private const int WIDTH = 800;
-        private const int HEIGHT = 600;
-        private const double FPS = 25.0;
-        private const String FILE_NAME = "C:/Users/NCABALLERO/OneDrive - HBK/Documents/VisualStudio_NET/test/Stream_Record/Stream_Record/Videos/video.mp4";
+        private const int WIDTH = 2448;
+        private const int HEIGHT = 2048;
+        private const double FPS = 18.0;
+        private const String FILE_NAME = "C:/Users/NCABALLERO/OneDrive - HBK/Documents/VisualStudio_NET/test/Stream_Record/Stream_Record/Videos/video1.mp4";
 
 
 
