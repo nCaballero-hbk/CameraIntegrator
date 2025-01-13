@@ -9,6 +9,7 @@ using System.Threading;
 using System.Drawing;
 using System.Windows.Media;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 
 
 namespace Streaming
@@ -70,7 +71,9 @@ namespace Streaming
 
                         //ArenaNET.IImage converted = ArenaNET.ImageFactory.Convert(image, (ArenaNET.EPfncFormat)0x02200017);
                         
-                        ArenaNET.IImage image = Arena.GetImageFromQueue();
+                        ArenaNET.IImage image = Arena.GetImageFromChannel();
+
+                        if (image == null) { return; }
 
                         System.Drawing.Bitmap bitmap = Arena.GetBitMapImage(image);
 
@@ -133,13 +136,16 @@ namespace Streaming
                 
                 stream = false;
 
+
+                streamThread_outer.Abort();
+                streamThread_outer.Join();
+
                 //Clear the Queue
-                Arena.ClearQueue();
+                Arena.ClearChannel();
 
                 // abort thread and wait for it to stop
                 // Wait for the thread to finish
-                streamThread_outer.Abort();
-                streamThread_outer.Join();
+
 
                 // stop stream and set window image source to empty
                 //stream = false;
@@ -163,7 +169,7 @@ namespace Streaming
             }
         }
 
-        private void StopRecording_Click(Object sender, RoutedEventArgs e)
+        private async void StopRecording_Click(Object sender, RoutedEventArgs e)
         {
             stopS_btn.IsEnabled = true;
             startS_btn.IsEnabled = false;
@@ -173,7 +179,7 @@ namespace Streaming
             if (stream == true && record == true)
             {
                 record = false;
-                Arena.StopRecording();
+                await Arena.StopRecording().ConfigureAwait(false);
             }
         }
 

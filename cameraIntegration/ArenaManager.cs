@@ -14,6 +14,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Collections;
+using System.Threading.Channels;
+using System.Runtime.Remoting.Channels;
 
 
 namespace Streaming
@@ -34,8 +36,16 @@ namespace Streaming
         private ArenaNET.IDevice m_connectedDevice = null;
         private ArenaNET.IImage m_converted;
 
-        private ConcurrentQueue<ArenaNET.IImage> imageQueue = new ConcurrentQueue<ArenaNET.IImage>(); 
-        private ManualResetEventSlim queueHasImages = new ManualResetEventSlim(false);
+        private ConcurrentQueue<ArenaNET.IImage> imageQueue = new ConcurrentQueue<ArenaNET.IImage>();
+        //private ManualResetEventSlim queueHasImages = new ManualResetEventSlim(false);
+
+        // Try with Channels
+        private Channel<ArenaNET.IImage> imageChannel = Channel.CreateBounded<ArenaNET.IImage>(new BoundedChannelOptions(32)
+        {
+            SingleReader = true,
+            SingleWriter = true,
+            FullMode = BoundedChannelFullMode.Wait
+        });
 
 
         ArenaNET.IImage image = null;
@@ -50,7 +60,7 @@ namespace Streaming
         private const int WIDTH = 2448;
         private const int HEIGHT = 2048;
         private const double FPS = 18.0;
-        private const String FILE_NAME = "C:/Users/NCABALLERO/OneDrive - HBK/Documents/VisualStudio_NET/test/Stream_Record/Stream_Record/Videos/video1.mp4";
+        private const String FILE_NAME = "C:/Users/NCABALLERO/OneDrive - HBK/Documents/VisualStudio_NET/test/Stream_Record/Stream_Record/Videos/video2.mp4";
 
 
 
@@ -172,6 +182,8 @@ namespace Streaming
                 m_converted = null;
             }
 
+
+
             m_converted = ArenaNET.ImageFactory.Convert(image, (ArenaNET.EPfncFormat)0x02200017);
 
             return m_converted.Bitmap;
@@ -181,6 +193,7 @@ namespace Streaming
         private void PullImages()
         {
             ArenaNET.IImage pic = null;
+            var writer = imageChannel.Writer;
 
             try
             {
@@ -196,12 +209,20 @@ namespace Streaming
                     // A copy of the Image needs to be done because we are trying to Dequeue in the other Thread
                     var picCopy = ArenaNET.ImageFactory.Copy(pic);
 
-                    imageQueue.Enqueue(picCopy);
-                    queueHasImages.Set();
+                    //imageQueue.Enqueue(picCopy);
+                    //queueHasImages.Set();
+
+                    while (!imageChannel.Writer.TryWrite(picCopy))
+                    {
+                        // Drop last item if full
+                        imageChannel.Reader.TryRead(out var x);
+                        Console.WriteLine($"Dropped last item {x}");
+                    }
 
                     if (recording == true)
                     {
-                        images.Add(ArenaNET.ImageFactory.Convert(picCopy, ArenaNET.EPfncFormat.BGR8));
+                        //images.Add(ArenaNET.ImageFactory.Copy(picCopy, ArenaNET.EPfncFormat.BGR8));
+                        images.Add(picCopy);
 
                     }
                 }
@@ -214,24 +235,37 @@ namespace Streaming
 
         }
 
-        public ArenaNET.IImage GetImageFromQueue()
+        public ArenaNET.IImage GetImageFromChannel()
         {
+            var reader = imageChannel.Reader;
 
-            queueHasImages.Wait();
-            if (imageQueue.TryDequeue(out IImage result))
+            //reader.ReadAsync
+            if (reader.TryRead(out var item))
             {
-                queueHasImages.Reset();
-                return result;
+                return item;
             }
             else
             {
                 return null;
             }
+
+            //queueHasImages.Wait();
+            //if (imageQueue.TryDequeue(out IImage result))
+            //{
+            //    queueHasImages.Reset();
+            //    return result;
+            //}
+            //else
+            //{
+            //    return null;
+            //}
         }
 
-        public void ClearQueue()
+        public void ClearChannel()
         {
-            while (imageQueue.TryDequeue(out var _)){}
+            // Delete all the Images in the Channel
+
+            while (imageChannel.Reader.TryRead(out _)){}
         }
 
 
@@ -281,18 +315,22 @@ namespace Streaming
             recording = true;
         }
 
-        public void StopRecording()
+        public async Task StopRecording()
         {
             recording = false;
-            //recorder.Open();
+            await Task.Run(() => {
             for (Int32 i = 0; i < images.Count; i++)
             {
-                recorder.AppendImage(images[i].DataArray);
+                var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
+                recorder.AppendImage(convertedItem.DataArray);
             }
 
             recorder.Close();
-            for (Int32 i = 0; i < images.Count; i++)
-                ArenaNET.ImageFactory.Destroy(images[i]);
+            //for (Int32 i = 0; i < images.Count; i++)
+            //ArenaNET.ImageFactory.Destroy(images[i]);
+            images.Clear();
+            });
+
         }
 
         // stops stream
