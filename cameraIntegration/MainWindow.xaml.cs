@@ -26,6 +26,8 @@ namespace Streaming
         Boolean record = false;
         BitmapImage bitmapimage;
 
+        DispatcherTimer timer = new DispatcherTimer();
+
         // on example start up
         public MainWindow()
         {
@@ -116,7 +118,7 @@ namespace Streaming
                 stream = true;
 
                 // Start streaming thread for acquiring images from Channel and display them
-                DispatcherTimer timer = new DispatcherTimer();
+                
                 timer.Interval = TimeSpan.FromMilliseconds(50);
                 timer.Tick += timer_Tick;
                 timer.Start();
@@ -150,8 +152,10 @@ namespace Streaming
                 stream = false;
 
                 // Stop the Outer Thread
-                streamThread_outer.Abort();
-                streamThread_outer.Join();
+                //streamThread_outer.Abort();
+                //streamThread_outer.Join();
+
+                timer.Stop();
 
                 // Empty the Channel
                 Arena.ClearChannel();
