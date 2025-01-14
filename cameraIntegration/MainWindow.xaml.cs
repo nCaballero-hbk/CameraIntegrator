@@ -50,10 +50,8 @@ namespace Streaming
         {
             while (stream)
             {
-
                 // grab image
                 GetImage();
-
             }
         }
 
@@ -67,14 +65,13 @@ namespace Streaming
                 {
                     try
                     {
-                        //ArenaNET.IImage image = Arena.GetImageFromQueue();
-
-                        //ArenaNET.IImage converted = ArenaNET.ImageFactory.Convert(image, (ArenaNET.EPfncFormat)0x02200017);
-                        
+                        // Get Image saved in ArenaManager PullImages() function
                         ArenaNET.IImage image = Arena.GetImageFromChannel();
 
+                        // If this Thread is quicker do nothing until there are Images in the channel
                         if (image == null) { return; }
 
+                        // Display the image
                         System.Drawing.Bitmap bitmap = Arena.GetBitMapImage(image);
 
                         using (MemoryStream memory = new MemoryStream())
@@ -102,66 +99,66 @@ namespace Streaming
             });
         }
 
-        // start stream button handler
+        // Sart Sream button handler
         private void StartStream_Click(object sender, RoutedEventArgs e)
         {
             if (stream == false)
             {
+                // Update the buttons
                 stopS_btn.IsEnabled = true;
                 startS_btn.IsEnabled = false;
                 startR_btn.IsEnabled = true;
                 stopR_btn.IsEnabled = false;
 
+                // Start the Stream Thread in ArenaManager
                 Arena.StartStream();
                 stream = true;
 
-                // start streaming thread for acquiring images
+                // Start streaming thread for acquiring images from Channel and display them
                 streamThread_outer = new Thread(() => StreamThread());
                 streamThread_outer.Start();
 
             }
         }
 
-        // stop stream button handler
+        //Stop Stram button handler
         private void StopStream_Click(object sender, RoutedEventArgs e)
         {
             if (stream == true)
             {
+                // Update the buttons
                 stopS_btn.IsEnabled = false;
                 startS_btn.IsEnabled = true;
                 startR_btn.IsEnabled = false;
                 stopR_btn.IsEnabled = false;
 
+                // Stop the Stream Thread in ArenaManager
                 Arena.StopStream();
-                
                 stream = false;
 
-
+                // Stop the Outer Thread
                 streamThread_outer.Abort();
                 streamThread_outer.Join();
 
-                //Clear the Queue
+                // Empty the Channel
                 Arena.ClearChannel();
 
-                // abort thread and wait for it to stop
-                // Wait for the thread to finish
-
-
-                // stop stream and set window image source to empty
-                //stream = false;
+                // Clear the UI
                 bitmapimage = null;
                 Image.Source = null;
             }
         }
 
-        // Start recording button handler
+        // Start Rcording button handler
         private void StartRecording_Click(object sender, RoutedEventArgs e)
         {
+            // Update the buttons
             stopS_btn.IsEnabled = false;
             startS_btn.IsEnabled = false;
             startR_btn.IsEnabled = false;
             stopR_btn.IsEnabled = true;
 
+            // Start the recording process just if the Stream is ON
             if (stream == true && record == false)
             {
                 record = true;
@@ -169,13 +166,16 @@ namespace Streaming
             }
         }
 
+        // Stop recording button handler
         private async void StopRecording_Click(Object sender, RoutedEventArgs e)
         {
+            // Update the buttons
             stopS_btn.IsEnabled = true;
             startS_btn.IsEnabled = false;
             startR_btn.IsEnabled = true;
             stopR_btn.IsEnabled = false;
 
+            // Stop the recording process just if the Stream is ON and I am already recording
             if (stream == true && record == true)
             {
                 record = false;
