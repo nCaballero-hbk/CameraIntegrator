@@ -40,11 +40,11 @@ namespace Streaming
         //private ManualResetEventSlim queueHasImages = new ManualResetEventSlim(false);
 
         // Try with Channels
-        private Channel<ArenaNET.IImage> imageChannel = Channel.CreateBounded<ArenaNET.IImage>(new BoundedChannelOptions(32)
+        private Channel<ArenaNET.IImage> imageChannel = Channel.CreateBounded<ArenaNET.IImage>(new BoundedChannelOptions(8)
         {
             SingleReader = true,
             SingleWriter = true,
-            FullMode = BoundedChannelFullMode.Wait
+            FullMode = BoundedChannelFullMode.DropOldest
         });
 
 
@@ -53,6 +53,7 @@ namespace Streaming
         SaveNET.VideoRecorder recorder = null;
         List<ArenaNET.IImage> images = new List<ArenaNET.IImage>();
         Thread streamThread_inner;
+
 
         private bool recording = false;
         private bool streaming = false;
@@ -192,8 +193,15 @@ namespace Streaming
 
         private void PullImages()
         {
+
             ArenaNET.IImage pic = null;
             var writer = imageChannel.Writer;
+
+            byte[] whiteData = Enumerable.Repeat((byte)255, HEIGHT*WIDTH).ToArray();
+
+            ArenaNET.IImage whiteImage = ImageFactory.Create(data: whiteData, width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BayerRG8);
+
+            ArenaNET.IImage emptyImage = ImageFactory.CreateEmpty(width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BGR8);
 
             try
             {
@@ -212,17 +220,27 @@ namespace Streaming
                     //imageQueue.Enqueue(picCopy);
                     //queueHasImages.Set();
 
-                    while (!imageChannel.Writer.TryWrite(picCopy))
+                    //while (!imageChannel.Writer.TryWrite(picCopy))
+                    //{
+                    //    // Drop last item if full
+                    //    imageChannel.Reader.TryRead(out var x);
+                    //    Console.WriteLine($"Dropped last item {x}");
+                    //}
+
+                    if (!imageChannel.Writer.TryWrite(picCopy))
                     {
-                        // Drop last item if full
-                        imageChannel.Reader.TryRead(out var x);
-                        Console.WriteLine($"Dropped last item {x}");
+                        Console.WriteLine("Problem: Not writing!");
                     }
 
                     if (recording == true)
                     {
-                        //images.Add(ArenaNET.ImageFactory.Copy(picCopy, ArenaNET.EPfncFormat.BGR8));
+                        //images.Add(emptyImage);
+
+                        //images.Add(whiteImage);
+
                         images.Add(picCopy);
+
+                        //images.Add(ArenaNET.ImageFactory.Convert(picCopy, ArenaNET.EPfncFormat.BGR8));
 
                     }
                 }
@@ -249,16 +267,6 @@ namespace Streaming
                 return null;
             }
 
-            //queueHasImages.Wait();
-            //if (imageQueue.TryDequeue(out IImage result))
-            //{
-            //    queueHasImages.Reset();
-            //    return result;
-            //}
-            //else
-            //{
-            //    return null;
-            //}
         }
 
         public void ClearChannel()
@@ -318,20 +326,42 @@ namespace Streaming
         public async Task StopRecording()
         {
             recording = false;
-            await Task.Run(() => {
-            for (Int32 i = 0; i < images.Count; i++)
+            await Task.Run(() =>
             {
-                var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
-                recorder.AppendImage(convertedItem.DataArray);
-            }
+                for (Int32 i = 0; i < images.Count; i++)
+                {
+                    //recorder.AppendImage(images[i].DataArray);
+                    var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
+                    recorder.AppendImage(convertedItem.DataArray);
+                }
 
-            recorder.Close();
-            //for (Int32 i = 0; i < images.Count; i++)
-            //ArenaNET.ImageFactory.Destroy(images[i]);
-            images.Clear();
+                recorder.Close();
+                images.Clear();
             });
 
         }
+
+        //public void StopRecording()
+        //{
+        //    recording = false;
+
+        //    Thread stopRecordingThread = new Thread(() =>
+        //    {
+        //        for (Int32 i = 0; i < images.Count; i++)
+        //        {
+        //            var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
+        //            recorder.AppendImage(convertedItem.DataArray);
+        //        }
+        //        recorder.Close();
+        //        images.Clear();
+
+
+
+        //    });
+
+        //    stopRecordingThread.IsBackground = true; // Set as background thread to terminate if the app closes
+        //    stopRecordingThread.Start(); // Start the thread
+        //}
 
         // stops stream
         public void StopStream()

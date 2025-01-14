@@ -10,6 +10,7 @@ using System.Drawing;
 using System.Windows.Media;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 
 
 namespace Streaming
@@ -115,11 +116,23 @@ namespace Streaming
                 stream = true;
 
                 // Start streaming thread for acquiring images from Channel and display them
-                streamThread_outer = new Thread(() => StreamThread());
-                streamThread_outer.Start();
+                DispatcherTimer timer = new DispatcherTimer();
+                timer.Interval = TimeSpan.FromMilliseconds(50);
+                timer.Tick += timer_Tick;
+                timer.Start();
+
+                //streamThread_outer = new Thread(() => StreamThread());
+                //streamThread_outer.Start();
 
             }
         }
+
+        private void timer_Tick(object sender, EventArgs e)
+        {
+            GetImage();
+        }
+
+
 
         //Stop Stram button handler
         private void StopStream_Click(object sender, RoutedEventArgs e)
@@ -182,6 +195,20 @@ namespace Streaming
                 await Arena.StopRecording().ConfigureAwait(false);
             }
         }
+
+        //private void StopRecording_Click(Object sender, RoutedEventArgs e)
+        //{
+        //    stopS_btn.IsEnabled = true;
+        //    startS_btn.IsEnabled = false;
+        //    startR_btn.IsEnabled = true;
+        //    stopR_btn.IsEnabled = false;
+
+        //    if (stream == true && record == true)
+        //    {
+        //        record = false;
+        //        Arena.StopRecording();
+        //    }
+        //}
 
         // tree view item selected handler
         private void DeviceTreeView_OnItemSelected(object sender, RoutedEventArgs e)
