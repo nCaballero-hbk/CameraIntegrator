@@ -22,17 +22,14 @@ namespace Streaming
     public partial class MainWindow : Window
     {
         ArenaManager Arena;
-        Thread streamThread_outer;
+
         Boolean stream = false;
         Boolean record = false;
-        //BitmapImage bitmapimage;
+
+        BitmapImage bitmapimage;
 
         DispatcherTimer timer = new DispatcherTimer();
 
-        MemoryStream memory = new MemoryStream();
-        BitmapImage bitmapimage = new BitmapImage();
-
-        // on example start up
         public MainWindow()
         {
             Arena = new ArenaManager();
@@ -63,14 +60,13 @@ namespace Streaming
                 {
                     try
                     {
-                        // Get Image saved in ArenaManager PullImages() function
+                        // Get The bitmap from the channel Image
                         var bitmap = Arena.GetImageFromChannel();
 
                         // If this Thread is quicker do nothing until there are Images in the channel
                         if (bitmap == null) { return; }
 
                         // Display the image
-
                         using (MemoryStream memory = new MemoryStream())
                         {
                             // save bitmap to memory stream
@@ -90,7 +86,7 @@ namespace Streaming
                     }
                     catch
                     {
-                        // TODO: Change it or delete it (now is doing nothing)
+                        // Cleans the Stream
                         CleanUpStream();
                     }
                 }
@@ -145,10 +141,6 @@ namespace Streaming
                 Arena.StopStream();
                 stream = false;
 
-                // Stop the Outer Thread
-                //streamThread_outer.Abort();
-                //streamThread_outer.Join();
-
                 timer.Stop();
 
                 // Empty the Channel
@@ -193,20 +185,6 @@ namespace Streaming
                 await Arena.StopRecording().ConfigureAwait(false);
             }
         }
-
-        //private void StopRecording_Click(Object sender, RoutedEventArgs e)
-        //{
-        //    stopS_btn.IsEnabled = true;
-        //    startS_btn.IsEnabled = false;
-        //    startR_btn.IsEnabled = true;
-        //    stopR_btn.IsEnabled = false;
-
-        //    if (stream == true && record == true)
-        //    {
-        //        record = false;
-        //        Arena.StopRecording();
-        //    }
-        //}
 
         // tree view item selected handler
         private void DeviceTreeView_OnItemSelected(object sender, RoutedEventArgs e)
@@ -294,18 +272,16 @@ namespace Streaming
         }
 
         // clean up stream and disconnect from device
-        private void CleanUpStream()
+        private  void CleanUpStream()
         {
             this.Dispatcher.Invoke(() =>
             {
                 if (Arena.DeviceConnected())
                 {
-                    // abort thread and wait for it to stop
-                    //streamThread_outer.Abort();
-                    //streamThread_outer.Join();
                     stream = false;
-                    timer.Stop();
+
                     // stop stream
+                    timer.Stop();
                     Arena.StopStream();
 
                     // set window image source to empty
@@ -318,13 +294,22 @@ namespace Streaming
         }
 
         // window close button handler
-        private void WindowClosing_Event(object sender, System.ComponentModel.CancelEventArgs e)
+        private async void WindowClosing_Event(object sender, System.ComponentModel.CancelEventArgs e)
         {
-            // abort thread and wait for it to stop
+            // Check if it is recording and streaming and closes everyting.
+            // In case is recording it will save the video until that point.
             try
             {
-                streamThread_outer.Abort();
-                streamThread_outer.Join();
+                if (timer.IsEnabled)
+                {
+                    if (record)
+                    {
+                        record = false;
+                        await Arena.StopRecording().ConfigureAwait(false);
+                    }
+                    timer.Stop();
+                    Arena.StopStream();
+                }
             }
             catch
             {

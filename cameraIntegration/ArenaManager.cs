@@ -36,8 +36,6 @@ namespace Streaming
         private ArenaNET.IDevice m_connectedDevice = null;
         private ArenaNET.IImage m_converted;
 
-        private ConcurrentQueue<ArenaNET.IImage> imageQueue = new ConcurrentQueue<ArenaNET.IImage>();
-        //private ManualResetEventSlim queueHasImages = new ManualResetEventSlim(false);
 
         // Try with Channels
         private Channel<ArenaNET.IImage> imageChannel = Channel.CreateBounded<ArenaNET.IImage>(new BoundedChannelOptions(8)
@@ -48,10 +46,10 @@ namespace Streaming
         });
 
 
-        ArenaNET.IImage image = null;
-        ArenaNET.IImage lastImage = null;
         SaveNET.VideoRecorder recorder = null;
         List<ArenaNET.IImage> images = new List<ArenaNET.IImage>();
+
+
         Thread streamThread_inner;
 
 
@@ -179,12 +177,12 @@ namespace Streaming
         {
             if (m_converted != null)
             {
+                // Every time ImageFactory is used we need to destroy that Image
                 ArenaNET.ImageFactory.Destroy(m_converted);
                 m_converted = null;
             }
 
-
-
+            // Converts the image from the Channel in order to display it
             m_converted = ArenaNET.ImageFactory.Convert(image, (ArenaNET.EPfncFormat)0x02200017);
 
             return m_converted.Bitmap;
@@ -195,70 +193,38 @@ namespace Streaming
         {
 
             ArenaNET.IImage pic = null;
-            ArenaNET.IBuffer picBuffer = null;
+
             var writer = imageChannel.Writer;
-
-            //byte[] whiteData = Enumerable.Repeat((byte)255, HEIGHT*WIDTH).ToArray();
-
-            //ArenaNET.IImage whiteImage = ImageFactory.Create(data: whiteData, width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BayerRG8);
-
-            //ArenaNET.IImage emptyImage = ImageFactory.CreateEmpty(width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BGR8);
 
             try
             {
                 while (streaming == true)
                 {
-                    //if (pic != null)
-                    //{
-                    //    m_connectedDevice.RequeueBuffer(pic);
-
-                    //}
-
+                    // Get the image from the camera
                     pic = m_connectedDevice.GetImage(2000);
 
-                    // A copy of the Image needs to be done because we are trying to Dequeue in the other Thread
+                    // A copy of the Image needs to be done because we are trying to grab the image from the channel.
+                    // This copy will need to be destroyes because we used ImageFactory
                     var picCopy = ArenaNET.ImageFactory.Copy(pic);
 
-                    //var picCopy = ArenaNET.ImageFactory.Shallow(pic.DataArray, pic.Width, pic.Height, pic.PixelFormat);
-
-                    //var pic2 = m_connectedDevice.GetImage(2000);
-                    
-
-
-
-                    //imageQueue.Enqueue(picCopy);
-                    //queueHasImages.Set();
-
+                    // Write the copy in the channel and destroy the oldest in case is needed
                     while (!imageChannel.Writer.TryWrite(picCopy))
                     {
-                        // Drop last item if full
+                        // Drop last item if it is full
                         imageChannel.Reader.TryRead(out var x);
                         Console.WriteLine($"Dropped last item {x}");
                         ImageFactory.Destroy(x);
                     }
 
 
-                    //if (!imageChannel.Writer.TryWrite(picCopy))
-                    //{
-                    //    Console.WriteLine("Problem: Not writing!");
-                    //}
-                    //ImageFactory.Destroy(picCopy);
-
-
                     if (recording == true)
                     {
+                        // In case we are recording, we create another copy to save the image in the list of recorded images.
                         images.Add(ArenaNET.ImageFactory.Copy(pic));
-
-                        //images.Add(emptyImage);
-
-                        //images.Add(whiteImage);
-
-                        //images.Add(picCopy);
-
-                        //images.Add(ArenaNET.ImageFactory.Convert(picCopy, ArenaNET.EPfncFormat.BGR8));
 
                     }
 
+                    // We requeue the initial image. Since is an image from the camera we don't need to destroy it but requeue it.
                     m_connectedDevice.RequeueBuffer(pic);
                 }
             }
@@ -274,11 +240,12 @@ namespace Streaming
         {
             var reader = imageChannel.Reader;
 
-            //reader.ReadAsync
+            // We read the image from the Channel
             if (reader.TryRead(out var item))
             {
                 var bitmap = GetBitMapImage(item);
 
+                // We destroy that image because there is no longer needed and it comes from a copy
                 ArenaNET.ImageFactory.Destroy(item);
 
                 return bitmap;
@@ -293,8 +260,10 @@ namespace Streaming
         public void ClearChannel()
         {
             // Delete all the Images in the Channel
-
-            while (imageChannel.Reader.TryRead(out _)){}
+            while (imageChannel.Reader.TryRead(out var c))
+            {
+                ArenaNET.ImageFactory.Destroy(c);
+            }
         }
 
 
@@ -311,13 +280,18 @@ namespace Streaming
                     streaming = true;
 
                     streamThread_inner = new Thread(() => PullImages());
-                    m_connectedDevice.StartStream(2);
+
+                    // Starts the stream in the device
+                    m_connectedDevice.StartStream();
+
+                    // Starts the Thread to make the PullImages work
                     streamThread_inner.Start();
 
                 }
             }
         }
 
+        // Function that configures the settings of the camera
         private void ConfigureSettings()
         {
             (m_connectedDevice.NodeMap.GetNode("AcquisitionMode") as ArenaNET.IEnumeration).FromString("Continuous");
@@ -335,15 +309,22 @@ namespace Streaming
             streamPacketResendEnableNode.Value = true;
         }
 
+        // Function to starts the recording. The recorder object needs to be created and Open in order to record the images.
+        // Once the rceorder is open we can not change the settings or parameters of the recorder.
         public void StartRecording()
         {
             SaveNET.VideoParams parameters = new SaveNET.VideoParams(WIDTH, HEIGHT, FPS);
             recorder = new SaveNET.VideoRecorder(parameters, FILE_NAME);
+
+            //Settings of the recorder
             recorder.SetH264Mp4BGR8();
+
             recorder.Open();
             recording = true;
         }
 
+
+        // Function to stop the recording. It needs to be Async because if not it causes a delay in the streaming while saving all the images
         public async Task StopRecording()
         {
             recording = false;
@@ -351,45 +332,31 @@ namespace Streaming
             {
                 for (Int32 i = 0; i < images.Count; i++)
                 {
-                    //recorder.AppendImage(images[i].DataArray);
+                    // Images need to be converted to match the recorder specifications. Since we are using Image factory we will need to destroy
                     var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
+
+                    // We append all the images on the recorder list into the recorder
                     recorder.AppendImage(convertedItem.DataArray);
+
+
                     ArenaNET.ImageFactory.Destroy(convertedItem);
                 }
 
+                // Once the recorder is closed it will save the vidoe in the directory specified and it will delete the recorder object
                 recorder.Close();
 
+                // Destry the images in the recorder list is needed
                 for (Int32 i = 0; i < images.Count; i++)
                 {
                     ArenaNET.ImageFactory.Destroy(images[i]);
                 }
 
+                // Clear the list
                 images.Clear();
             });
 
         }
 
-        //public void StopRecording()
-        //{
-        //    recording = false;
-
-        //    Thread stopRecordingThread = new Thread(() =>
-        //    {
-        //        for (Int32 i = 0; i < images.Count; i++)
-        //        {
-        //            var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
-        //            recorder.AppendImage(convertedItem.DataArray);
-        //        }
-        //        recorder.Close();
-        //        images.Clear();
-
-
-
-        //    });
-
-        //    stopRecordingThread.IsBackground = true; // Set as background thread to terminate if the app closes
-        //    stopRecordingThread.Start(); // Start the thread
-        //}
 
         // stops stream
         public void StopStream()
@@ -400,12 +367,14 @@ namespace Streaming
                 {
                     streaming = false;
 
+                    // Strop Stream in the device
                     m_connectedDevice.StopStream();
 
+
+                    // Stop the thread with the PullImages function
                     streamThread_inner.Abort();
                     streamThread_inner.Join();
 
-                    lastImage = null;
 
                 }
             }
