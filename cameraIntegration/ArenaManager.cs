@@ -44,7 +44,7 @@ namespace Streaming
         {
             SingleReader = true,
             SingleWriter = true,
-            FullMode = BoundedChannelFullMode.DropOldest
+            FullMode = BoundedChannelFullMode.Wait
         });
 
 
@@ -175,7 +175,7 @@ namespace Streaming
 
 
         // gets image as bitmap
-        public System.Drawing.Bitmap GetBitMapImage(ArenaNET.IImage image)
+        private System.Drawing.Bitmap GetBitMapImage(ArenaNET.IImage image)
         {
             if (m_converted != null)
             {
@@ -195,54 +195,71 @@ namespace Streaming
         {
 
             ArenaNET.IImage pic = null;
+            ArenaNET.IBuffer picBuffer = null;
             var writer = imageChannel.Writer;
 
-            byte[] whiteData = Enumerable.Repeat((byte)255, HEIGHT*WIDTH).ToArray();
+            //byte[] whiteData = Enumerable.Repeat((byte)255, HEIGHT*WIDTH).ToArray();
 
-            ArenaNET.IImage whiteImage = ImageFactory.Create(data: whiteData, width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BayerRG8);
+            //ArenaNET.IImage whiteImage = ImageFactory.Create(data: whiteData, width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BayerRG8);
 
-            ArenaNET.IImage emptyImage = ImageFactory.CreateEmpty(width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BGR8);
+            //ArenaNET.IImage emptyImage = ImageFactory.CreateEmpty(width: WIDTH, height: HEIGHT, pixelFormat: EPfncFormat.BGR8);
 
             try
             {
                 while (streaming == true)
                 {
-                    if (pic != null)
-                    {
-                        m_connectedDevice.RequeueBuffer(pic);
-                    }
+                    //if (pic != null)
+                    //{
+                    //    m_connectedDevice.RequeueBuffer(pic);
+
+                    //}
 
                     pic = m_connectedDevice.GetImage(2000);
 
                     // A copy of the Image needs to be done because we are trying to Dequeue in the other Thread
                     var picCopy = ArenaNET.ImageFactory.Copy(pic);
 
+                    //var picCopy = ArenaNET.ImageFactory.Shallow(pic.DataArray, pic.Width, pic.Height, pic.PixelFormat);
+
+                    //var pic2 = m_connectedDevice.GetImage(2000);
+                    
+
+
+
                     //imageQueue.Enqueue(picCopy);
                     //queueHasImages.Set();
 
-                    //while (!imageChannel.Writer.TryWrite(picCopy))
-                    //{
-                    //    // Drop last item if full
-                    //    imageChannel.Reader.TryRead(out var x);
-                    //    Console.WriteLine($"Dropped last item {x}");
-                    //}
-
-                    if (!imageChannel.Writer.TryWrite(picCopy))
+                    while (!imageChannel.Writer.TryWrite(picCopy))
                     {
-                        Console.WriteLine("Problem: Not writing!");
+                        // Drop last item if full
+                        imageChannel.Reader.TryRead(out var x);
+                        Console.WriteLine($"Dropped last item {x}");
+                        ImageFactory.Destroy(x);
                     }
+
+
+                    //if (!imageChannel.Writer.TryWrite(picCopy))
+                    //{
+                    //    Console.WriteLine("Problem: Not writing!");
+                    //}
+                    //ImageFactory.Destroy(picCopy);
+
 
                     if (recording == true)
                     {
+                        images.Add(ArenaNET.ImageFactory.Copy(pic));
+
                         //images.Add(emptyImage);
 
                         //images.Add(whiteImage);
 
-                        images.Add(picCopy);
+                        //images.Add(picCopy);
 
                         //images.Add(ArenaNET.ImageFactory.Convert(picCopy, ArenaNET.EPfncFormat.BGR8));
 
                     }
+
+                    m_connectedDevice.RequeueBuffer(pic);
                 }
             }
             catch(Exception e)
@@ -253,14 +270,18 @@ namespace Streaming
 
         }
 
-        public ArenaNET.IImage GetImageFromChannel()
+        public Bitmap GetImageFromChannel()
         {
             var reader = imageChannel.Reader;
 
             //reader.ReadAsync
             if (reader.TryRead(out var item))
             {
-                return item;
+                var bitmap = GetBitMapImage(item);
+
+                ArenaNET.ImageFactory.Destroy(item);
+
+                return bitmap;
             }
             else
             {
@@ -290,7 +311,7 @@ namespace Streaming
                     streaming = true;
 
                     streamThread_inner = new Thread(() => PullImages());
-                    m_connectedDevice.StartStream();
+                    m_connectedDevice.StartStream(2);
                     streamThread_inner.Start();
 
                 }
@@ -333,9 +354,16 @@ namespace Streaming
                     //recorder.AppendImage(images[i].DataArray);
                     var convertedItem = ArenaNET.ImageFactory.Convert(images[i], ArenaNET.EPfncFormat.BGR8);
                     recorder.AppendImage(convertedItem.DataArray);
+                    ArenaNET.ImageFactory.Destroy(convertedItem);
                 }
 
                 recorder.Close();
+
+                for (Int32 i = 0; i < images.Count; i++)
+                {
+                    ArenaNET.ImageFactory.Destroy(images[i]);
+                }
+
                 images.Clear();
             });
 

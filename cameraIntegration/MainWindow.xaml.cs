@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using ArenaNET;
 
 
 namespace Streaming
@@ -24,9 +25,12 @@ namespace Streaming
         Thread streamThread_outer;
         Boolean stream = false;
         Boolean record = false;
-        BitmapImage bitmapimage;
+        //BitmapImage bitmapimage;
 
         DispatcherTimer timer = new DispatcherTimer();
+
+        MemoryStream memory = new MemoryStream();
+        BitmapImage bitmapimage = new BitmapImage();
 
         // on example start up
         public MainWindow()
@@ -48,19 +52,10 @@ namespace Streaming
             UpdateDeviceList();
         }
 
-        // thread for grabbing images
-        private void StreamThread()
-        {
-            while (stream)
-            {
-                // grab image
-                GetImage();
-            }
-        }
-
         // grab image from stream to display to window
         private void GetImage()
         {
+            //ArenaNET.IImage blankImage = ImageFactory.CreateEmpty(2448, 2048, EPfncFormat.BayerGR8);
             this.Dispatcher.Invoke(() =>
             {
                 // if connected to selected tree view device
@@ -69,13 +64,12 @@ namespace Streaming
                     try
                     {
                         // Get Image saved in ArenaManager PullImages() function
-                        ArenaNET.IImage image = Arena.GetImageFromChannel();
+                        var bitmap = Arena.GetImageFromChannel();
 
                         // If this Thread is quicker do nothing until there are Images in the channel
-                        if (image == null) { return; }
+                        if (bitmap == null) { return; }
 
                         // Display the image
-                        System.Drawing.Bitmap bitmap = Arena.GetBitMapImage(image);
 
                         using (MemoryStream memory = new MemoryStream())
                         {
@@ -96,11 +90,13 @@ namespace Streaming
                     }
                     catch
                     {
+                        // TODO: Change it or delete it (now is doing nothing)
                         CleanUpStream();
                     }
                 }
             });
         }
+
 
         // Sart Sream button handler
         private void StartStream_Click(object sender, RoutedEventArgs e)
@@ -117,18 +113,16 @@ namespace Streaming
                 Arena.StartStream();
                 stream = true;
 
-                // Start streaming thread for acquiring images from Channel and display them
-                
+                // Start streaming Timer for acquiring images from Channel and display them.
+                // Frame rate is 18 fps, and 1/18 = 55,5555
                 timer.Interval = TimeSpan.FromMilliseconds(50);
                 timer.Tick += timer_Tick;
                 timer.Start();
 
-                //streamThread_outer = new Thread(() => StreamThread());
-                //streamThread_outer.Start();
-
             }
         }
 
+        // Timer Tick function. It calls the GetImage function
         private void timer_Tick(object sender, EventArgs e)
         {
             GetImage();
@@ -307,10 +301,10 @@ namespace Streaming
                 if (Arena.DeviceConnected())
                 {
                     // abort thread and wait for it to stop
-                    streamThread_outer.Abort();
-                    streamThread_outer.Join();
+                    //streamThread_outer.Abort();
+                    //streamThread_outer.Join();
                     stream = false;
-
+                    timer.Stop();
                     // stop stream
                     Arena.StopStream();
 
